@@ -78,3 +78,4 @@ def map_investor_category(long_df):
     long_df["Category_Label"] = long_df["Category"].apply(transform)
 
     return long_df
+#

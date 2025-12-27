@@ -13,3 +13,4 @@ def load_all_data(data_folder="data"):
         df_list.append(df)
 
     return pd.concat(df_list, ignore_index=True)
+#
