@@ -23,7 +23,7 @@ st.title("📊 Analisis Perubahan Kepemilikan Saham (Equity Only)")
 # LOAD & PREPARE DATA
 # ===============================
 @st.cache_data
-def load_prepare():
+def load_prepare() -> pd.DataFrame:
     raw_df = load_all_data()
     clean_df = clean_data(raw_df)
     long_df = melt_ownership(clean_df)
@@ -81,36 +81,30 @@ if code_df.empty:
     st.stop()
 
 # ===============================
-# HITUNG MoM NET FLOW
+# AGREGASI BULANAN (LEVEL DULU)
 # ===============================
-code_df = code_df.sort_values(
-    ["Category_Label", "Date"]
+agg_df = (
+    code_df
+    .groupby(["Date", "Category_Label"], as_index=False)
+    .agg({"Shares": "sum"})
+    .sort_values(["Category_Label", "Date"])
 )
 
-code_df["NetFlow"] = (
-    code_df
+# ===============================
+# HITUNG MoM (SETELAH AGREGASI)
+# ===============================
+agg_df["NetFlow"] = (
+    agg_df
     .groupby("Category_Label")["Shares"]
     .diff()
     .fillna(0)
 )
 
 # ===============================
-# AGGREGASI
-# ===============================
-agg_df = (
-    code_df
-    .groupby(["Date", "Category_Label"], as_index=False)
-    .agg({
-        "Shares": "sum",
-        "NetFlow": "sum"
-    })
-)
-
-# ===============================
-# TAMBAHAN KOLUMN VISUAL
+# KOLUMN VISUAL
 # ===============================
 agg_df["Direction"] = agg_df["NetFlow"].apply(
-    lambda x: "Akumulasi" if x > 0 else "Distribusi"
+    lambda x: "Akumulasi" if x > 0 else "Distribusi" if x < 0 else "Stagnan"
 )
 
 agg_df["Magnitude"] = agg_df["NetFlow"].abs()
@@ -133,7 +127,7 @@ level_chart = alt.Chart(agg_df).mark_bar().encode(
 st.altair_chart(level_chart, use_container_width=True)
 
 # ===============================
-# CHART 2 — PERUBAHAN (MoM) LEBIH JELAS
+# CHART 2 — PERUBAHAN (MoM)
 # ===============================
 st.subheader("📉 Perubahan Kepemilikan (Month-over-Month)")
 
@@ -147,8 +141,8 @@ flow_chart = alt.Chart(agg_df).mark_bar().encode(
     color=alt.Color(
         "Direction:N",
         scale=alt.Scale(
-            domain=["Akumulasi", "Distribusi"],
-            range=["#1b9e77", "#d95f02"]
+            domain=["Akumulasi", "Distribusi", "Stagnan"],
+            range=["#1b9e77", "#d95f02", "#999999"]
         ),
         legend=alt.Legend(title="Arah Perubahan")
     ),
@@ -164,19 +158,18 @@ flow_chart = alt.Chart(agg_df).mark_bar().encode(
     ]
 ).properties(height=420)
 
-# Garis nol (baseline visual)
+# garis nol
 zero_line = alt.Chart(
     pd.DataFrame({"y": [0]})
-).mark_rule(
-    color="black",
-    strokeWidth=1
-).encode(y="y:Q")
+).mark_rule(color="black", strokeWidth=1).encode(y="y:Q")
 
 st.altair_chart(flow_chart + zero_line, use_container_width=True)
 
 # ===============================
 # NARASI OTOMATIS
 # ===============================
+st.markdown("## 🧠 Ringkasan Otomatis")
+
 total_flow = agg_df["NetFlow"].sum()
 
 dominant = (
@@ -188,17 +181,16 @@ dominant = (
 
 top_actor = dominant.index[0]
 top_value = dominant.iloc[0]
-
-st.markdown("## 🧠 Ringkasan Otomatis")
+dominant_direction = "akumulasi" if top_value > 0 else "distribusi"
 
 st.markdown(
     f"""
     Untuk saham **{selected_code}**, periode terpilih menunjukkan
-    **{'akumulasi' if total_flow > 0 else 'distribusi'} bersih**
+    **{'akumulasi' if total_flow > 0 else 'distribusi' if total_flow < 0 else 'stagnan'} bersih**
     sebesar **{total_flow:,.0f} saham**.
 
     Perubahan paling dominan berasal dari
-    **{top_actor}** dengan kontribusi
-    **{top_value:,.0f} saham**.
+    **{top_actor}** dengan
+    **{dominant_direction} sebesar {top_value:,.0f} saham**.
     """
 )
