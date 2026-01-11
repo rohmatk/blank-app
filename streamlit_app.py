@@ -97,7 +97,7 @@ code_df["NetFlow"] = (
 # ===============================
 # AGGREGASI
 # ===============================
-agg_level = (
+agg_df = (
     code_df
     .groupby(["Date", "Category_Label"], as_index=False)
     .agg({
@@ -107,51 +107,87 @@ agg_level = (
 )
 
 # ===============================
+# TAMBAHAN KOLUMN VISUAL
+# ===============================
+agg_df["Direction"] = agg_df["NetFlow"].apply(
+    lambda x: "Akumulasi" if x > 0 else "Distribusi"
+)
+
+agg_df["Magnitude"] = agg_df["NetFlow"].abs()
+
+# ===============================
 # CHART 1 — LEVEL KEPEMILIKAN
 # ===============================
 st.subheader("📦 Total Kepemilikan Saham")
 
-level_chart = alt.Chart(agg_level).mark_bar().encode(
+level_chart = alt.Chart(agg_df).mark_bar().encode(
     x=alt.X("yearmonth(Date):O", title="Bulan"),
     y=alt.Y("Shares:Q", title="Jumlah Saham"),
-    color=alt.Color("Category_Label:N", title="Kategori"),
-    tooltip=["Category_Label", "Shares"]
+    color=alt.Color("Category_Label:N", title="Kategori Investor"),
+    tooltip=[
+        "Category_Label",
+        alt.Tooltip("Shares:Q", format=",")
+    ]
 ).properties(height=420)
 
 st.altair_chart(level_chart, use_container_width=True)
 
 # ===============================
-# CHART 2 — PERUBAHAN (MoM)
+# CHART 2 — PERUBAHAN (MoM) LEBIH JELAS
 # ===============================
 st.subheader("📉 Perubahan Kepemilikan (Month-over-Month)")
 
-flow_chart = alt.Chart(agg_level).mark_bar().encode(
+flow_chart = alt.Chart(agg_df).mark_bar().encode(
     x=alt.X("yearmonth(Date):O", title="Bulan"),
-    y=alt.Y("NetFlow:Q", title="Perubahan Saham"),
-    color=alt.condition(
-        alt.datum.NetFlow > 0,
-        alt.value("#2ecc71"),
-        alt.value("#e74c3c")
+    y=alt.Y(
+        "NetFlow:Q",
+        title="Perubahan Saham",
+        axis=alt.Axis(grid=True)
     ),
-    tooltip=["Category_Label", "NetFlow"]
+    color=alt.Color(
+        "Direction:N",
+        scale=alt.Scale(
+            domain=["Akumulasi", "Distribusi"],
+            range=["#1b9e77", "#d95f02"]
+        ),
+        legend=alt.Legend(title="Arah Perubahan")
+    ),
+    opacity=alt.Opacity(
+        "Magnitude:Q",
+        scale=alt.Scale(range=[0.3, 1.0]),
+        legend=None
+    ),
+    tooltip=[
+        "Category_Label",
+        "Direction",
+        alt.Tooltip("NetFlow:Q", format=",")
+    ]
 ).properties(height=420)
 
-st.altair_chart(flow_chart, use_container_width=True)
+# Garis nol (baseline visual)
+zero_line = alt.Chart(
+    pd.DataFrame({"y": [0]})
+).mark_rule(
+    color="black",
+    strokeWidth=1
+).encode(y="y:Q")
+
+st.altair_chart(flow_chart + zero_line, use_container_width=True)
 
 # ===============================
 # NARASI OTOMATIS
 # ===============================
-total_flow = agg_level["NetFlow"].sum()
+total_flow = agg_df["NetFlow"].sum()
 
-dominant_cat = (
-    agg_level
+dominant = (
+    agg_df
     .groupby("Category_Label")["NetFlow"]
     .sum()
     .sort_values(ascending=False)
 )
 
-top_actor = dominant_cat.index[0]
-top_value = dominant_cat.iloc[0]
+top_actor = dominant.index[0]
+top_value = dominant.iloc[0]
 
 st.markdown("## 🧠 Ringkasan Otomatis")
 
@@ -166,3 +202,4 @@ st.markdown(
     **{top_value:,.0f} saham**.
     """
 )
+# ===============================
